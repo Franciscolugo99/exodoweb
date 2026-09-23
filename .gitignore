@@ -1,0 +1,7 @@
+/config.php
+/public/install/install.lock
+/storage/
+*.log
+*.bak
+*.sql.gz
+

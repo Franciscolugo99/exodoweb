@@ -1,6 +1,11 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/../src/bootstrap.php';
+if (!\Exodo\Config::isConfigured()) {
+    http_response_code(503);
+    ?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ÉXODO · Instalación pendiente</title><style>body{font-family:system-ui,sans-serif;background:#1c1c1c;color:#f5f0e8;display:grid;place-items:center;min-height:100vh;margin:0;padding:1.5rem;text-align:center}main{max-width:34rem;background:#262626;border-top:4px solid #e8501a;border-radius:10px;padding:2rem}a{color:#f4a17f}</style></head><body><main><h1>ÉXODO todavía no está instalado</h1><p>Completá la configuración de MySQL y el usuario inicial para poner en marcha el sitio.</p><p><a href="/install/">Abrir instalador</a></p></main></body></html><?php
+    exit;
+}
 ?>
 <!DOCTYPE html>
 <html lang="es">
