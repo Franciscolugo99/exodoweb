@@ -260,7 +260,9 @@ final class OrderService
                 'items'          => $validation['items'],
             ];
         } catch (\Throwable $e) {
-            $pdo->rollBack();
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
             error_log('Order creation failed: ' . $e->getMessage());
             throw $e;
         }

@@ -91,11 +91,16 @@ try {
         if ($deliveryType === 'delivery' && ($settings['delivery_enabled'] ?? '0') !== '1') {
             respond(['error' => 'El delivery no está disponible en este momento.'], 409);
         }
+        $paymentMethod = (string) ($input['payment_method'] ?? 'cash');
+        if (!in_array($paymentMethod, ['cash', 'mercadopago'], true)) respond(['error' => 'Medio de pago inválido.'], 400);
+        if ($paymentMethod === 'mercadopago' && ($settings['mercadopago_enabled'] ?? '0') !== '1') {
+            respond(['error' => 'Mercado Pago todavía no está habilitado.'], 409);
+        }
 
         $result = OrderService::create([
             'items' => is_array($input['items'] ?? null) ? $input['items'] : [],
             'delivery_type' => $deliveryType,
-            'payment_method' => (string) ($input['payment_method'] ?? 'cash'),
+            'payment_method' => $paymentMethod,
             'customer_name' => trim((string) ($input['customer_name'] ?? '')) ?: null,
             'customer_phone' => trim((string) ($input['customer_phone'] ?? '')) ?: null,
             'delivery_street' => trim((string) ($input['delivery_street'] ?? '')) ?: null,
