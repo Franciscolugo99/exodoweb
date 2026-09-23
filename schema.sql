@@ -214,7 +214,7 @@ INSERT INTO products (category_id, name, description, price, is_demo, is_promo, 
 (1, 'CAIRO', 'Podés dejar indicaciones para cocina.', 14500.00, 1, 0, 2, '/assets/img/cairo.webp', 1),
 (1, 'OKLAHOMA', 'Podés dejar indicaciones para cocina.', 13500.00, 1, 0, 3, '/assets/img/oklahoma.webp', 1),
 (1, 'LA PROMESA', 'Podés dejar indicaciones para cocina.', 17500.00, 1, 0, 4, '/assets/img/la-promesa.webp', 1),
-(2, '2 Clásicas + Papas', 'Promoción de muestra para editar desde el panel.', 20000.00, 1, 1, 5, '/assets/img/burger-demo.png', 0);
+(2, '2 Clásicas + Papas', 'Promoción de muestra para editar desde el panel.', 20000.00, 1, 1, 5, '/assets/img/burger-demo.webp', 0);
 
 -- Los ingredientes específicos no se infieren de las referencias visuales.
 -- Se cargan desde el panel antes de habilitar la personalización por ingrediente.
