@@ -75,7 +75,7 @@ if (is_file($lockPath) || is_file($configPath)) {
 }
 ?><!doctype html>
 <html lang="es">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Instalar ÉXODO</title>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" type="image/png" href="/assets/img/logo-exodo-transparent.png"><title>Instalar ÉXODO</title>
 <style>
 :root{color-scheme:dark;font-family:Inter,system-ui,sans-serif;background:#1c1c1c;color:#f5f0e8}body{max-width:680px;margin:0 auto;padding:clamp(1rem,5vw,3rem)}main{background:#262626;border-top:4px solid #e8501a;border-radius:10px;padding:clamp(1rem,4vw,2rem)}h1{margin-top:0;letter-spacing:.04em}h2{font-size:1.05rem;margin:1.5rem 0 .6rem;color:#f4a17f}.grid{display:grid;grid-template-columns:2fr 1fr;gap:.8rem}label{display:grid;gap:.35rem;margin:.65rem 0;font-size:.9rem;color:#c9c1b8}input{width:100%;box-sizing:border-box;background:#171717;border:1px solid #555;color:#fff;border-radius:6px;padding:.75rem;font-size:1rem}button{margin-top:1rem;background:#e8501a;border:0;color:#fff;border-radius:6px;padding:.8rem 1.1rem;font-weight:700;font-size:1rem;cursor:pointer}.error{background:#5a2525;color:#ffd1c6;padding:.8rem;border-radius:6px}.success{background:#1e4b32;color:#c7f4d4;padding:.8rem;border-radius:6px}small{color:#b8b2a8;line-height:1.5}a{color:#f4a17f}
 </style></head>

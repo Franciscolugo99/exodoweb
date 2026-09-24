@@ -4,6 +4,7 @@ require_once __DIR__ . '/../../src/bootstrap.php';
 
 use Exodo\Config;
 use Exodo\Database;
+use Exodo\AddOnCatalog;
 use Exodo\OrderService;
 use Exodo\Settings;
 
@@ -34,29 +35,34 @@ try {
              FROM products WHERE is_available = 1 ORDER BY sort_order, name'
         )->fetchAll();
         $ingredients = $pdo->query(
-            'SELECT pi.product_id, i.id AS ingredient_id, i.name
+            'SELECT pi.product_id, i.id AS ingredient_id, i.name, i.price, pi.is_default, pi.is_addable
              FROM product_ingredients pi JOIN ingredients i ON i.id = pi.ingredient_id
              WHERE i.active = 1 ORDER BY i.sort_order, i.name'
         )->fetchAll();
 
         $byProduct = [];
         foreach ($ingredients as $ingredient) {
-            $byProduct[(int) $ingredient['product_id']][] = [
+            $entry = [
                 'ingredient_id' => (int) $ingredient['ingredient_id'],
                 'name' => (string) $ingredient['name'],
+                'price' => (float) $ingredient['price'],
             ];
+            $productId = (int) $ingredient['product_id'];
+            if ((bool) $ingredient['is_default']) $byProduct[$productId]['ingredients'][] = $entry;
         }
+        $settings = Settings::all();
+        $globalAddOns = AddOnCatalog::available($pdo, $settings);
         foreach ($products as &$product) {
             $product['id'] = (int) $product['id'];
             $product['category_id'] = (int) $product['category_id'];
             $product['price'] = (float) $product['price'];
             $product['is_demo'] = (bool) $product['is_demo'];
             $product['is_promo'] = (bool) $product['is_promo'];
-            $product['ingredients'] = $byProduct[$product['id']] ?? [];
+            $product['ingredients'] = $byProduct[$product['id']]['ingredients'] ?? [];
+            $product['add_ons'] = $globalAddOns;
         }
         unset($product);
 
-        $settings = Settings::all();
         $promo = null;
         foreach ($products as $product) {
             if ($product['is_promo']) { $promo = $product; break; }

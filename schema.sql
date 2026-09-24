@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS product_ingredients (
     product_id INT UNSIGNED NOT NULL,
     ingredient_id INT UNSIGNED NOT NULL,
     is_default TINYINT(1) NOT NULL DEFAULT 1,
+    is_addable TINYINT(1) NOT NULL DEFAULT 0,
     PRIMARY KEY (product_id, ingredient_id),
     FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
     FOREIGN KEY (ingredient_id) REFERENCES ingredients(id) ON DELETE CASCADE
@@ -133,6 +134,7 @@ CREATE TABLE IF NOT EXISTS order_items (
     unit_price DECIMAL(10,2) NOT NULL COMMENT 'Precio al momento de la compra',
     quantity INT UNSIGNED NOT NULL DEFAULT 1,
     removed_ingredients TEXT DEFAULT NULL COMMENT 'JSON array de IDs quitados',
+    added_ingredients TEXT DEFAULT NULL COMMENT 'JSON de extras y precios al momento de la compra',
     custom_notes TEXT DEFAULT NULL,
     FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
     FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT
@@ -216,8 +218,25 @@ INSERT INTO products (category_id, name, description, price, is_demo, is_promo, 
 (1, 'LA PROMESA', 'Podés dejar indicaciones para cocina.', 17500.00, 1, 0, 4, '/assets/img/la-promesa.webp', 1),
 (2, '2 Clásicas + Papas', 'Promoción de muestra para editar desde el panel.', 20000.00, 1, 1, 5, '/assets/img/burger-demo.webp', 0);
 
--- Los ingredientes específicos no se infieren de las referencias visuales.
--- Se cargan desde el panel antes de habilitar la personalización por ingrediente.
+-- Ingredientes de muestra que el cliente puede quitar desde la personalización.
+-- El panel permite reemplazar esta configuración por la receta real del local.
+INSERT IGNORE INTO product_ingredients (product_id, ingredient_id, is_default)
+SELECT p.id, i.id, 1
+FROM products p
+JOIN ingredients i ON (
+    (p.name = 'SINAI' AND i.name IN ('Cheddar', 'Pepinillos', 'Cebolla', 'Salsa ÉXODO'))
+    OR (p.name = 'CAIRO' AND i.name IN ('Cheddar', 'Cebolla', 'Bacon', 'Salsa ÉXODO'))
+    OR (p.name = 'OKLAHOMA' AND i.name IN ('Cheddar', 'Pepinillos', 'Bacon', 'Huevo', 'Salsa ÉXODO'))
+    OR (p.name = 'LA PROMESA' AND i.name IN ('Cheddar', 'Pepinillos', 'Cebolla', 'Bacon', 'Huevo', 'Salsa ÉXODO'))
+);
+
+-- Extras de muestra disponibles en las hamburguesas; sus precios se editan desde el panel.
+INSERT INTO product_ingredients (product_id, ingredient_id, is_default, is_addable)
+SELECT p.id, i.id, 0, 1
+FROM products p
+JOIN ingredients i ON i.name IN ('Cheddar', 'Bacon')
+WHERE p.name IN ('SINAI', 'CAIRO', 'OKLAHOMA', 'LA PROMESA')
+ON DUPLICATE KEY UPDATE is_addable = 1;
 
 SET FOREIGN_KEY_CHECKS = 1;
 

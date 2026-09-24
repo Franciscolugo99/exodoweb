@@ -16,6 +16,10 @@ final class OrderService
         $pdo = Database::getInstance();
         $issues = [];
         $validatedItems = [];
+        $availableAddOns = [];
+        foreach (AddOnCatalog::available($pdo) as $addOn) {
+            $availableAddOns[(int) $addOn['ingredient_id']] = $addOn;
+        }
 
         if ($items === []) {
             $issues[] = ['type' => 'empty_cart', 'message' => 'El carrito está vacío.'];
@@ -75,19 +79,19 @@ final class OrderService
                 $removedIngredients = [];
                 $issues[] = ['index' => $index, 'type' => 'invalid_ingredient', 'message' => 'Ingredientes inválidos.'];
             }
+            $validIngredientIds = [];
             if (!empty($removedIngredients)) {
                 $ingStmt = $pdo->prepare(
                     'SELECT i.id FROM product_ingredients pi
                      JOIN ingredients i ON i.id = pi.ingredient_id
-                     WHERE pi.product_id = ? AND i.active = 1'
+                     WHERE pi.product_id = ? AND pi.is_default = 1 AND i.active = 1'
                 );
                 $ingStmt->execute([$productId]);
-                $validIds = array_column($ingStmt->fetchAll(), 'id');
-                $validIds = array_map('intval', $validIds);
+                $validIngredientIds = array_map('intval', array_column($ingStmt->fetchAll(), 'id'));
                 $filteredIngredients = [];
                 foreach ($removedIngredients as $ingId) {
                     $ingId = (int) $ingId;
-                    if (!in_array($ingId, $validIds, true)) {
+                    if (!in_array($ingId, $validIngredientIds, true)) {
                         $issues[] = ['index' => $index, 'type' => 'invalid_ingredient', 'message' => 'Ingrediente inválido.'];
                         continue;
                     }
@@ -95,6 +99,47 @@ final class OrderService
                 }
                 $removedIngredients = array_values(array_unique($filteredIngredients));
             }
+
+            // Los extras disponibles y sus importes siempre se validan con el precio del servidor.
+            $addedInput = $item['added_ingredients'] ?? [];
+            if (!is_array($addedInput)) {
+                $addedInput = [];
+                $issues[] = ['index' => $index, 'type' => 'invalid_ingredient', 'message' => 'Los extras seleccionados no son válidos.'];
+            }
+            $addedIngredients = [];
+            if ($addedInput !== []) {
+                foreach ($addedInput as $addedEntry) {
+                    $isQuantityEntry = is_array($addedEntry);
+                    $addedId = (int) ($isQuantityEntry ? ($addedEntry['ingredient_id'] ?? 0) : $addedEntry);
+                    $rawAddOnQuantity = $isQuantityEntry ? ($addedEntry['quantity'] ?? 1) : 1;
+                    $addOnQuantity = filter_var($rawAddOnQuantity, FILTER_VALIDATE_INT);
+                    if ($addOnQuantity === false || $addOnQuantity < 1 || $addOnQuantity > 10) {
+                        $issues[] = ['index' => $index, 'type' => 'invalid_add_on_quantity', 'message' => 'Podés sumar entre 1 y 10 porciones de cada extra.'];
+                        continue;
+                    }
+                    if (!isset($availableAddOns[$addedId])) {
+                        $issues[] = ['index' => $index, 'type' => 'invalid_ingredient', 'message' => 'Uno de los extras ya no está disponible.'];
+                        continue;
+                    }
+                    $addOn = $availableAddOns[$addedId];
+                    $totalAddOnQuantity = ($addedIngredients[$addedId]['quantity'] ?? 0) + $addOnQuantity;
+                    if ($totalAddOnQuantity > 10) {
+                        $issues[] = ['index' => $index, 'type' => 'invalid_add_on_quantity', 'message' => 'Podés sumar hasta 10 porciones de cada extra.'];
+                        continue;
+                    }
+                    $addedIngredients[$addedId] = [
+                        'ingredient_id' => $addedId,
+                        'name' => (string) $addOn['name'],
+                        'quantity' => $totalAddOnQuantity,
+                        'unit_price' => (float) $addOn['price'],
+                    ];
+                }
+            }
+            $addedIngredients = array_values($addedIngredients);
+            $addOnTotal = array_sum(array_map(
+                static fn(array $extra): float => (float) $extra['unit_price'] * (int) $extra['quantity'],
+                $addedIngredients
+            ));
 
             $customRemovals = trim(preg_replace('/[\r\n]+/u', ' ', (string) ($item['custom_removals'] ?? '')) ?? '');
             $customRemovals = mb_substr($customRemovals, 0, 250);
@@ -107,9 +152,11 @@ final class OrderService
             $validatedItems[] = [
                 'product_id'          => $productId,
                 'product_name'        => $product['name'],
-                'unit_price'          => $currentPrice,
+                'base_price'          => $currentPrice,
+                'unit_price'          => $currentPrice + $addOnTotal,
                 'quantity'            => $quantity,
                 'removed_ingredients' => $removedIngredients,
+                'added_ingredients'  => $addedIngredients,
                 'custom_notes'        => implode("\n", $kitchenInstructions),
             ];
         }
@@ -169,7 +216,7 @@ final class OrderService
                 $blocking = array_filter($validation['issues'], fn($i) =>
                 in_array($i['type'], [
                     'empty_cart', 'invalid_item', 'invalid_product', 'invalid_quantity',
-                    'unavailable', 'not_found', 'invalid_ingredient', 'delivery_disabled'
+                    'unavailable', 'not_found', 'invalid_ingredient', 'invalid_add_on_quantity', 'delivery_disabled'
                 ], true)
                 );
                 if (!empty($blocking)) {
@@ -227,8 +274,8 @@ final class OrderService
             $itemStmt = $pdo->prepare(
                 'INSERT INTO order_items (
                     order_id, product_id, product_name, unit_price, quantity,
-                    removed_ingredients, custom_notes
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)'
+                    removed_ingredients, added_ingredients, custom_notes
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
             );
 
             foreach ($validation['items'] as $item) {
@@ -239,6 +286,7 @@ final class OrderService
                     $item['unit_price'],
                     $item['quantity'],
                     json_encode($item['removed_ingredients']),
+                    json_encode($item['added_ingredients'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
                     $item['custom_notes'],
                 ]);
             }

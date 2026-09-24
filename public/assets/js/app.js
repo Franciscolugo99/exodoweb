@@ -146,7 +146,7 @@
                     <p class="price">${money(product.price)}</p>
                     ${catalog.demo_mode ? '<small class="demo-label">Precio de muestra</small>' : ''}
                     <button type="button" class="btn btn-primary btn-block add-to-cart" data-id="${product.id}">
-                        ${product.is_promo ? 'Personalizar promo' : 'Agregar al carrito'}
+                        ${product.is_promo ? 'Personalizar promo' : 'Personalizar y agregar'}
                     </button>
                 </div>
             `;
@@ -189,7 +189,10 @@
             : 'Guardar cambios';
         const ingContainer = document.getElementById('customizeIngredients');
         const hasIngredients = Array.isArray(product.ingredients) && product.ingredients.length > 0;
+        const addOnContainer = document.getElementById('customizeAddOnsList');
+        const hasAddOns = Array.isArray(product.add_ons) && product.add_ons.length > 0;
         document.getElementById('customizeOptions').hidden = !hasIngredients;
+        document.getElementById('customizeAddOns').hidden = !hasAddOns;
         document.getElementById('customizeEmpty').hidden = hasIngredients;
         document.getElementById('customizeRemoveLabel').textContent = hasIngredients
             ? '¿Querés quitar algo más?'
@@ -198,15 +201,19 @@
             ? 'Podés sumar otros ingredientes separados por coma; cocina verá todo junto.'
             : 'Escribilos separados por coma; aparecerán destacados para cocina.';
         ingContainer.innerHTML = '';
+        addOnContainer.innerHTML = '';
         document.getElementById('customizeIntro').textContent = hasIngredients
-            ? 'Marcá lo que querés sacar. Lo que queda seleccionado se mantiene en tu burger.'
-            : 'Sumá cualquier detalle para que cocina prepare tu pedido como te gusta.';
+            ? 'Quitá ingredientes incluidos o sumá extras. Cada cambio queda indicado para cocina.'
+            : hasAddOns
+                ? 'Esta receta no tiene ingredientes base cargados. Podés sumar extras o dejar una indicación.'
+                : 'Sumá cualquier detalle para que cocina prepare tu pedido como te gusta.';
         const savedItem = cartIndex === null ? null : cart[cartIndex];
         const removedBefore = new Set((savedItem?.removed_ingredients || []).map(Number));
+        const addedBefore = addOnQuantities(savedItem?.added_ingredients || []);
 
         (product.ingredients || []).forEach(ing => {
             const label = document.createElement('label');
-            label.className = 'ingredient-check';
+            label.className = 'ingredient-check ingredient-check--remove';
             label.innerHTML = `
                 <input type="checkbox" checked value="${escapeHtml(ing.ingredient_id)}">
                 <span class="ingredient-name">${escapeHtml(ing.name)}</span>
@@ -222,6 +229,45 @@
             ingContainer.appendChild(label);
         });
 
+        (product.add_ons || []).forEach(extra => {
+            const row = document.createElement('div');
+            const price = Number(extra.price) || 0;
+            const ingredientId = Number(extra.ingredient_id);
+            const quantity = addedBefore.get(ingredientId) || 0;
+            row.className = 'ingredient-check ingredient-check--addon addon-row';
+            row.setAttribute('role', 'group');
+            row.setAttribute('aria-label', `Extra de ${extra.name}`);
+            row.innerHTML = `
+                <span class="ingredient-name addon-copy">
+                    <strong>${escapeHtml(extra.name)}</strong>
+                    <small class="addon-unit-price">${price > 0 ? `${money(price)} por porción` : 'Sin cargo por porción'}</small>
+                </span>
+                <span class="addon-stepper">
+                    <button type="button" class="addon-quantity-button" data-step="-1" aria-label="Quitar una porción de ${escapeHtml(extra.name)}" ${quantity <= 0 ? 'disabled' : ''}>−</button>
+                    <output class="addon-quantity" data-ingredient-id="${ingredientId}" aria-live="polite" aria-label="${quantity} porciones">${quantity}</output>
+                    <button type="button" class="addon-quantity-button addon-quantity-button--add" data-step="1" aria-label="Agregar una porción de ${escapeHtml(extra.name)}" ${quantity >= 10 ? 'disabled' : ''}>+</button>
+                </span>
+                <span class="ingredient-state addon-state">${quantity > 0 ? `${quantity} ${quantity === 1 ? 'porción' : 'porciones'} · ${money(price * quantity)}` : 'Agregar'}</span>
+            `;
+            row.classList.toggle('is-selected', quantity > 0);
+            row.querySelectorAll('.addon-quantity-button').forEach(button => {
+                button.addEventListener('click', () => {
+                    const output = row.querySelector('.addon-quantity');
+                    const nextQuantity = Math.max(0, Math.min(10, Number(output.textContent) + Number(button.dataset.step)));
+                    output.textContent = String(nextQuantity);
+                    output.setAttribute('aria-label', `${nextQuantity} ${nextQuantity === 1 ? 'porción' : 'porciones'}`);
+                    row.querySelector('[data-step="-1"]').disabled = nextQuantity === 0;
+                    row.querySelector('[data-step="1"]').disabled = nextQuantity === 10;
+                    row.querySelector('.ingredient-state').textContent = nextQuantity > 0
+                        ? `${nextQuantity} ${nextQuantity === 1 ? 'porción' : 'porciones'} · ${money(price * nextQuantity)}`
+                        : 'Agregar';
+                    row.classList.toggle('is-selected', nextQuantity > 0);
+                    updateCustomizeSummary();
+                });
+            });
+            addOnContainer.appendChild(row);
+        });
+
         document.getElementById('customizeNotes').value = savedItem?.custom_notes || '';
         document.getElementById('customizeRemoveText').value = savedItem?.custom_removals || '';
         updateCustomizeSummary();
@@ -233,9 +279,71 @@
         const removed = [...document.querySelectorAll('#customizeIngredients input[type="checkbox"]:not(:checked)')]
             .map(input => input.closest('.ingredient-check')?.querySelector('.ingredient-name')?.textContent.trim())
             .filter(Boolean);
+        const additions = [...document.querySelectorAll('#customizeAddOnsList .addon-quantity')]
+            .map(output => {
+                const quantity = Number(output.textContent) || 0;
+                const name = output.closest('.addon-row')?.querySelector('.addon-copy strong')?.textContent.trim();
+                return quantity > 0 && name ? `${quantity} × ${name}` : '';
+            })
+            .filter(Boolean);
         document.getElementById('customizeSummary').textContent = removed.length
             ? `Se quitar${removed.length === 1 ? 'á' : 'án'}: ${removed.join(', ')}`
             : 'No se quitarán ingredientes.';
+        const addOnSummary = document.getElementById('customizeAddOnsSummary');
+        addOnSummary.textContent = additions.length
+            ? `Se agregarán: ${additions.join(', ')}`
+            : 'No se agregarán extras.';
+        addOnSummary.classList.toggle('has-addons', additions.length > 0);
+        updateCustomizePriceSummary();
+    }
+
+    function updateCustomizePriceSummary() {
+        if (!currentProduct) return;
+        const addOnTotal = [...document.querySelectorAll('#customizeAddOnsList .addon-quantity')]
+            .reduce((sum, output) => {
+                const extra = (currentProduct.add_ons || []).find(item => Number(item.ingredient_id) === Number(output.dataset.ingredientId));
+                return sum + (Number(extra?.price) || 0) * (Number(output.textContent) || 0);
+            }, 0);
+        const basePrice = Number(currentProduct.price) || 0;
+        const total = basePrice + addOnTotal;
+        document.getElementById('customizePriceSummary').textContent = addOnTotal > 0
+            ? `Hamburguesa ${money(basePrice)} + extras ${money(addOnTotal)} = ${money(total)}`
+            : `Precio de esta hamburguesa: ${money(total)}`;
+    }
+
+    function selectedAddOns(item) {
+        const product = catalog.products.find(p => Number(p.id) === Number(item.product_id));
+        const selected = addOnQuantities(item.added_ingredients || []);
+        return (product?.add_ons || []).flatMap(extra => {
+            const quantity = selected.get(Number(extra.ingredient_id)) || 0;
+            return quantity > 0 ? [{ ...extra, quantity }] : [];
+        });
+    }
+
+    function addOnQuantities(items) {
+        const quantities = new Map();
+        (Array.isArray(items) ? items : []).forEach(item => {
+            const isRecord = item !== null && typeof item === 'object';
+            const id = Number(isRecord ? item.ingredient_id : item);
+            const quantity = isRecord ? Number(item.quantity) || 1 : 1;
+            if (Number.isInteger(id) && id > 0 && quantity > 0) {
+                quantities.set(id, Math.min(10, (quantities.get(id) || 0) + Math.floor(quantity)));
+            }
+        });
+        return quantities;
+    }
+
+    function unitPriceWithAddOns(item) {
+        return Number(item.unit_price) + selectedAddOns(item).reduce((sum, extra) => sum + (Number(extra.price) || 0) * extra.quantity, 0);
+    }
+
+    function hasCustomization(item) {
+        return Boolean(
+            (item.removed_ingredients || []).length
+            || (item.added_ingredients || []).length
+            || String(item.custom_removals || '').trim()
+            || String(item.custom_notes || '').trim()
+        );
     }
 
     function updateCustomizeNotesCount() {
@@ -270,6 +378,9 @@
             unit_price: currentProduct.price,
             quantity: currentCartIndex === null ? 1 : cart[currentCartIndex].quantity,
             removed_ingredients: removed,
+            added_ingredients: [...document.querySelectorAll('#customizeAddOnsList .addon-quantity')]
+                .map(output => ({ ingredient_id: Number(output.dataset.ingredientId), quantity: Number(output.textContent) || 0 }))
+                .filter(extra => extra.quantity > 0),
             custom_removals: customRemovals,
             custom_notes: notes,
         };
@@ -311,14 +422,17 @@
             const removedNames = (item.removed_ingredients || [])
                 .map(id => product?.ingredients?.find(ing => Number(ing.ingredient_id) === Number(id))?.name)
                 .filter(Boolean);
+            const addOnNames = selectedAddOns(item);
             const div = document.createElement('div');
-            div.className = 'cart-item';
+            const customized = hasCustomization(item);
+            div.className = 'cart-item' + (customized ? ' is-customized' : '');
             div.innerHTML = `
                 <div class="cart-item-info">
-                    <strong>${escapeHtml(item.product_name)}</strong>
-                    <span>${money(item.unit_price)}</span>
-                    ${removedNames.length ? `<small>Quitar: ${escapeHtml(removedNames.join(', '))}</small>` : ''}
-                    ${item.custom_removals ? `<small>Quitar: ${escapeHtml(item.custom_removals)}</small>` : ''}
+                    <strong>${escapeHtml(item.product_name)}${customized ? ' <span class="cart-custom-badge">Personalizada</span>' : ''}</strong>
+                    <span>${money(unitPriceWithAddOns(item))}</span>
+                    ${removedNames.length ? `<small class="cart-custom-remove">Quitar: ${escapeHtml(removedNames.join(', '))}</small>` : ''}
+                    ${item.custom_removals ? `<small class="cart-custom-remove">Quitar: ${escapeHtml(item.custom_removals)}</small>` : ''}
+                    ${addOnNames.length ? `<small class="cart-custom-add">Agregar: ${escapeHtml(addOnNames.map(extra => `${extra.name} × ${extra.quantity} ${extra.quantity === 1 ? 'porción' : 'porciones'}${item.quantity > 1 ? ' por hamburguesa' : ''} (+${money(extra.price * extra.quantity)}${item.quantity > 1 ? ' c/u' : ''})`).join(', '))}</small>` : ''}
                     ${item.custom_notes ? `<small>Nota: ${escapeHtml(item.custom_notes)}</small>` : ''}
                 </div>
                 <div class="cart-item-actions">
@@ -352,7 +466,7 @@
             });
         });
 
-        const subtotal = cart.reduce((s, i) => s + i.unit_price * i.quantity, 0);
+        const subtotal = cart.reduce((s, i) => s + unitPriceWithAddOns(i) * i.quantity, 0);
         const deliveryType = document.querySelector('input[name="deliveryType"]:checked')?.value;
         const deliveryFee = deliveryType === 'delivery' ? Number(catalog.delivery_fee || 0) : 0;
         document.getElementById('cartTotals').innerHTML = `
@@ -434,21 +548,79 @@
     async function showTracking(token) {
         const modal = document.getElementById('trackingModal');
         const content = document.getElementById('trackingContent');
-        content.innerHTML = '<p>Cargando…</p>';
+        const orderRef = document.getElementById('trackingOrderRef');
+        orderRef.hidden = true;
+        orderRef.textContent = '';
+        content.innerHTML = '<p class="tracking-loading" role="status">Consultando el pedido…</p>';
         modal.showModal();
         try {
             const order = await api('track', { query: { token } });
+            orderRef.textContent = `Pedido #${order.id}`;
+            orderRef.hidden = false;
+            const statusClass = String(order.status || '').replace(/[^a-z0-9_-]/gi, '');
+            const deliveryType = order.delivery_type === 'delivery' ? 'Delivery' : 'Retiro en local';
+            const deliveryAddress = [
+                [order.delivery_street, order.delivery_number].filter(Boolean).join(' '),
+                order.delivery_locality,
+            ].filter(Boolean).join(', ');
+            const items = Array.isArray(order.items) ? order.items : [];
+            const itemMarkup = items.map(item => {
+                let removedIds = [];
+                try {
+                    const parsed = JSON.parse(item.removed_ingredients || '[]');
+                    if (Array.isArray(parsed)) removedIds = parsed;
+                } catch { /* Los pedidos anteriores pueden no tener ingredientes serializados. */ }
+                const product = catalog.products.find(p => Number(p.id) === Number(item.product_id));
+                const removedNames = removedIds
+                    .map(id => product?.ingredients?.find(ingredient => Number(ingredient.ingredient_id) === Number(id))?.name)
+                    .filter(Boolean);
+                const instructionLines = String(item.custom_notes || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+                const manualRemovals = instructionLines
+                    .filter(line => /^Quitar:\s*/i.test(line))
+                    .map(line => line.replace(/^Quitar:\s*/i, ''));
+                const notes = instructionLines
+                    .filter(line => /^Indicaciones:\s*/i.test(line))
+                    .map(line => line.replace(/^Indicaciones:\s*/i, ''));
+                let addedIngredients = [];
+                try {
+                    const parsed = JSON.parse(item.added_ingredients || '[]');
+                    if (Array.isArray(parsed)) addedIngredients = parsed.filter(extra => extra && typeof extra === 'object' && String(extra.name || '').trim());
+                } catch { /* Los pedidos anteriores pueden no tener extras serializados. */ }
+                const removals = [...new Set([...removedNames, ...manualRemovals])];
+                const customized = removals.length > 0 || addedIngredients.length > 0 || notes.length > 0;
+                const customization = customized ? `
+                    <div class="tracking-item-customization">
+                        <span class="tracking-custom-label">Personalizada</span>
+                        ${removals.length ? `<span class="tracking-item-removals"><strong>Sin:</strong> ${escapeHtml(removals.join(', '))}</span>` : ''}
+                        ${addedIngredients.length ? `<span class="tracking-item-additions"><strong>Extra:</strong> ${escapeHtml(addedIngredients.map(extra => {
+                            const portions = Math.max(1, Number(extra.quantity) || 1);
+                            const burgers = Math.max(1, Number(item.quantity) || 1);
+                            return `${extra.name} × ${portions} ${portions === 1 ? 'porción' : 'porciones'}${burgers > 1 ? ` por hamburguesa (${portions * burgers} en total)` : ''}`;
+                        }).join(', '))}</span>` : ''}
+                        ${notes.length ? `<span class="tracking-item-note"><strong>Nota:</strong> ${escapeHtml(notes.join(' · '))}</span>` : ''}
+                    </div>` : '';
+                return `<li class="tracking-item${customized ? ' is-customized' : ''}">
+                    <div class="tracking-item-heading"><strong>${escapeHtml(item.product_name || item.current_product_name || 'Producto')}</strong><span class="tracking-item-quantity">× ${Number(item.quantity) || 1}</span></div>
+                    ${customization}
+                </li>`;
+            }).join('');
             content.innerHTML = `
-                <p><strong>Pedido #${order.id}</strong></p>
-                <p>Estado: <strong>${statusLabel(order.status)}</strong></p>
-                <p>Total: ${money(order.total)}</p>
-                <p>Modalidad: ${order.delivery_type === 'delivery' ? 'Delivery' : 'Retiro en local'}</p>
-                ${order.delivery_type === 'delivery' ? `<p>Dirección: ${escapeHtml(order.delivery_street || '')} ${escapeHtml(order.delivery_number || '')}, ${escapeHtml(order.delivery_locality || '')}</p>` : ''}
-                <h3>Productos</h3>
-                <ul>${order.items.map(i => `<li>${escapeHtml(i.product_name)} × ${i.quantity}</li>`).join('')}</ul>
+                <div class="tracking-status tracking-status--${statusClass}" role="status">
+                    <span class="tracking-status-label">Estado del pedido</span>
+                    <strong class="tracking-status-value">${escapeHtml(statusLabel(order.status))}</strong>
+                </div>
+                <div class="tracking-overview">
+                    <div class="tracking-fact tracking-fact--total"><span>Total</span><strong>${money(order.total)}</strong></div>
+                    <div class="tracking-fact"><span>Modalidad</span><strong>${deliveryType}</strong></div>
+                    ${deliveryAddress && order.delivery_type === 'delivery' ? `<div class="tracking-fact tracking-fact--address"><span>Dirección de entrega</span><address>${escapeHtml(deliveryAddress)}</address></div>` : ''}
+                </div>
+                <section class="tracking-products" aria-labelledby="trackingProductsTitle">
+                    <h3 id="trackingProductsTitle">Productos</h3>
+                    <ul class="tracking-items">${itemMarkup || '<li class="tracking-item">No hay productos para mostrar.</li>'}</ul>
+                </section>
             `;
         } catch (e) {
-            content.innerHTML = `<p class="error">${escapeHtml(e.message)}</p>`;
+            content.innerHTML = `<div class="tracking-error" role="alert"><strong>No pudimos consultar tu pedido</strong><p>${escapeHtml(e.message || 'Revisá tu conexión e intentá nuevamente.')}</p></div>`;
         }
     }
 
